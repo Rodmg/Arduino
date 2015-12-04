@@ -305,7 +305,7 @@ private:
 
     void _reserve(size_t size)
     {
-        const size_t pbuf_unit_size = 512;
+        const size_t pbuf_unit_size = 2048;
         if (!_tx_buf_head)
         {
             _tx_buf_head = pbuf_alloc(PBUF_TRANSPORT, pbuf_unit_size, PBUF_RAM);
