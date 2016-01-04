@@ -28,8 +28,13 @@
 #include "ESP8266WebServer.h"
 #include "FS.h"
 #include "detail/RequestHandlersImpl.h"
-// #define DEBUG
+
+//#define DEBUG_ESP_HTTP_SERVER
+#ifdef DEBUG_ESP_PORT
+#define DEBUG_OUTPUT DEBUG_ESP_PORT
+#else
 #define DEBUG_OUTPUT Serial
+#endif
 
 const char * AUTHORIZATION_HEADER = "Authorization";
 
@@ -71,6 +76,7 @@ ESP8266WebServer::~ESP8266WebServer() {
     delete handler;
     handler = next;
   }
+  close();
 }
 
 void ESP8266WebServer::begin() {
@@ -154,7 +160,7 @@ void ESP8266WebServer::handleClient() {
     return;
   }
 
-#ifdef DEBUG
+#ifdef DEBUG_ESP_HTTP_SERVER
   DEBUG_OUTPUT.println("New client");
 #endif
 
@@ -171,6 +177,14 @@ void ESP8266WebServer::handleClient() {
   _currentClient = client;
   _contentLength = CONTENT_LENGTH_NOT_SET;
   _handleRequest();
+}
+
+void ESP8266WebServer::close() {
+  _server.close();
+}
+
+void ESP8266WebServer::stop() {
+  close();
 }
 
 void ESP8266WebServer::sendHeader(const String& name, const String& value, bool first) {
@@ -407,13 +421,13 @@ void ESP8266WebServer::onNotFound(THandlerFunction fn) {
 void ESP8266WebServer::_handleRequest() {
   bool handled = false;
   if (!_currentHandler){
-#ifdef DEBUG
+#ifdef DEBUG_ESP_HTTP_SERVER
     DEBUG_OUTPUT.println("request handler not found");
 #endif
   }
   else {
     handled = _currentHandler->handle(*this, _currentMethod, _currentUri);
-#ifdef DEBUG
+#ifdef DEBUG_ESP_HTTP_SERVER
     if (!handled) {
       DEBUG_OUTPUT.println("request handler failed to handle request");
     }

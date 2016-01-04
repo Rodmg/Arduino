@@ -29,7 +29,6 @@ extern "C"
 }
 #include <errno.h>
 #include "debug.h"
-#include "cbuf.h"
 #include "ESP8266WiFi.h"
 #include "WiFiClientSecure.h"
 #include "WiFiClient.h"
@@ -38,11 +37,12 @@ extern "C"
 #include "lwip/tcp.h"
 #include "lwip/inet.h"
 #include "lwip/netif.h"
-#include "cbuf.h"
 #include "include/ClientContext.h"
 #include "c_types.h"
 
-//#define DEBUG_SSL
+#ifdef DEBUG_ESP_SSL
+#define DEBUG_SSL
+#endif
 
 #ifdef DEBUG_SSL
 #define SSL_DEBUG_OPTS SSL_DISPLAY_STATES
@@ -53,7 +53,7 @@ extern "C"
 uint8_t* default_private_key = 0;
 uint32_t default_private_key_len = 0;
 static bool default_private_key_dynamic = false;
-//
+static int s_pk_refcnt = 0;
 uint8_t* default_certificate = 0;
 uint32_t default_certificate_len = 0;
 static bool default_certificate_dynamic = false;
@@ -81,9 +81,6 @@ public:
         if (_ssl_ctx_refcnt == 0) {
             ssl_ctx_free(_ssl_ctx);
         }
-
-        clear_private_key();
-        clear_certificate();
     }
 
     void ref() {
@@ -137,6 +134,17 @@ public:
         return _read_ptr[0];
     }
 
+    size_t peekBytes(char *dst, size_t size) {
+        if(!_available) {
+            if(!_readAll())
+                return -1;
+        }
+
+        size_t will_copy = (_available < size) ? _available : size;
+        memcpy(dst, _read_ptr, will_copy);
+        return will_copy;
+    }
+
     int available() {
         auto cb = _available;
         if (cb == 0) {
@@ -186,11 +194,16 @@ int SSLContext::_ssl_ctx_refcnt = 0;
 
 
 WiFiClientSecure::WiFiClientSecure() {
+    ++s_pk_refcnt;
 }
 
 WiFiClientSecure::~WiFiClientSecure() {
     if (_ssl) {
         _ssl->unref();
+    }
+    if (--s_pk_refcnt == 0) {
+        clear_private_key();
+        clear_certificate();
     }
 }
 
@@ -277,6 +290,27 @@ int WiFiClientSecure::peek() {
     return _ssl->peek();
 }
 
+size_t WiFiClientSecure::peekBytes(uint8_t *buffer, size_t length) {
+    size_t count = 0;
+
+    if(!_ssl) {
+        return 0;
+    }
+
+    _startMillis = millis();
+    while((available() < (int) length) && ((millis() - _startMillis) < _timeout)) {
+        yield();
+    }
+
+    if(available() < (int) length) {
+        count = available();
+    } else {
+        count = length;
+    }
+
+    return _ssl->peekBytes((char *)buffer, count);
+}
+
 int WiFiClientSecure::available() {
     if (!_ssl)
         return 0;
@@ -326,7 +360,7 @@ bool WiFiClientSecure::verify(const char* fp, const char* url) {
     int len = strlen(fp);
     int pos = 0;
     for (size_t i = 0; i < sizeof(sha1); ++i) {
-        while (pos < len && fp[pos] == ' ') {
+        while (pos < len && ((fp[pos] == ' ') || (fp[pos] == ':'))) {
             ++pos;
         }
         if (pos > len - 2) {
@@ -460,8 +494,9 @@ extern "C" void* ax_port_malloc(size_t size, const char* file, int line) {
         DEBUG_TLS_MEM_PRINT("%s:%d malloc %d failed, left %d\r\n", file, line, size, ESP.getFreeHeap());
         panic();
     }
-    if (size >= 1024)
+    if (size >= 1024) {
         DEBUG_TLS_MEM_PRINT("%s:%d malloc %d, left %d\r\n", file, line, size, ESP.getFreeHeap());
+    }
     return result;
 }
 
@@ -477,8 +512,9 @@ extern "C" void* ax_port_realloc(void* ptr, size_t size, const char* file, int l
         DEBUG_TLS_MEM_PRINT("%s:%d realloc %d failed, left %d\r\n", file, line, size, ESP.getFreeHeap());
         panic();
     }
-    if (size >= 1024)
+    if (size >= 1024) {
         DEBUG_TLS_MEM_PRINT("%s:%d realloc %d, left %d\r\n", file, line, size, ESP.getFreeHeap());
+    }
     return result;
 }
 
@@ -486,6 +522,7 @@ extern "C" void ax_port_free(void* ptr) {
     free(ptr);
     uint32_t *p = (uint32_t*) ptr;
     size_t size = p[-3];
-    if (size >= 1024)
+    if (size >= 1024) {
         DEBUG_TLS_MEM_PRINT("free %d, left %d\r\n", p[-3], ESP.getFreeHeap());
+    }
 }

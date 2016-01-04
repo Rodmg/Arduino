@@ -49,6 +49,7 @@ Olimex MOD-WIFI-ESP8266(-DEV)| 2M | 1M
 SparkFun Thing | 512k | 64k
 SweetPea ESP-210 | 4M | 1M, 3M
 WeMos D1 & D1 mini | 4M | 1M, 3M
+ESPDuino | 4M | 1M, 3M
 
 **Note:** to use any of file system functions in the sketch, add the following include to the sketch:
 
@@ -169,8 +170,14 @@ struct FSInfo {
 };
 ```
 
-This is the structure which may be filled using FS::info method. Field names
-are self-explanatory.
+This is the structure which may be filled using FS::info method.
+- `totalBytes` — total size of useful data on the file system
+- `usedBytes` — number of bytes used by files
+- `blockSize` — SPIFFS block size
+- `pageSize` — SPIFFS logical page size
+- `maxOpenFiles` — max number of files which may be open simultaneously
+- `maxPathLength` — max file name length (including one byte for zero termination)
+
 
 ## Directory object (Dir)
 
